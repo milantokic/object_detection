@@ -6,6 +6,15 @@ from collections import Counter
 
 
 def intersection_over_union(boxes_preds, boxes_labels, box_format="midpoint"):
+    """
+    Calculates intersection over union
+    Parameters:
+        boxes_preds (tensor): Predictions of Bounding Boxes (BATCH_SIZE, 4)
+        boxes_labels (tensor): Correct labels of Bounding Boxes (BATCH_SIZE, 4)
+        box_format (str): midpoint/corners, if boxes (x,y,w,h) or (x1,y1,x2,y2)
+    Returns:
+        tensor: Intersection over union for all examples
+    """
 
     if box_format == "midpoint":
         box1_x1 = boxes_preds[..., 0:1] - boxes_preds[..., 2:3] / 2
@@ -41,8 +50,23 @@ def intersection_over_union(boxes_preds, boxes_labels, box_format="midpoint"):
     return intersection / (box1_area + box2_area - intersection + 1e-6)
 
 
-def non_max_suppression(bboxes, iou_threshold, threshold, box_format="corners"):
 
+
+
+
+
+def non_max_suppression(bboxes, iou_threshold, threshold, box_format="corners"):
+    """
+    Does Non Max Suppression given bboxes
+    Parameters:
+        bboxes (list): list of lists containing all bboxes with each bboxes
+        specified as [class_pred, prob_score, x1, y1, x2, y2]
+        iou_threshold (float): threshold where predicted bboxes is correct
+        threshold (float): threshold to remove predicted bboxes (independent of IoU)
+        box_format (str): "midpoint" or "corners" used to specify bboxes
+    Returns:
+        list: bboxes after performing NMS given a specific IoU threshold
+    """
 
     assert type(bboxes) == list
 
@@ -71,9 +95,20 @@ def non_max_suppression(bboxes, iou_threshold, threshold, box_format="corners"):
 
 
 def mean_average_precision(
-        pred_boxes, true_boxes, iou_threshold=0.5, box_format="midpoint", num_classes=20
+        pred_boxes, true_boxes, iou_threshold=0.5, box_format="midpoint", num_classes=10
 ):
-
+    """
+    Calculates mean average precision
+    Parameters:
+        pred_boxes (list): list of lists containing all bboxes with each bboxes
+        specified as [train_idx, class_prediction, prob_score, x1, y1, x2, y2]
+        true_boxes (list): Similar as pred_boxes except all the correct ones
+        iou_threshold (float): threshold where predicted bboxes is correct
+        box_format (str): "midpoint" or "corners" used to specify bboxes
+        num_classes (int): number of classes
+    Returns:
+        float: mAP value across all classes given a specific IoU threshold
+    """
 
     # list storing all AP for respective classes
     average_precisions = []
@@ -96,10 +131,16 @@ def mean_average_precision(
             if true_box[1] == c:
                 ground_truths.append(true_box)
 
-
+        # find the amount of bboxes for each training example
+        # Counter here finds how many ground truth bboxes we get
+        # for each training example, so let's say img 0 has 3,
+        # img 1 has 5 then we will obtain a dictionary with:
+        # amount_bboxes = {0:3, 1:5}
         amount_bboxes = Counter([gt[0] for gt in ground_truths])
 
-
+        # We then go through each key, val in this dictionary
+        # and convert to the following (w.r.t same example):
+        # ammount_bboxes = {0:torch.tensor[0,0,0], 1:torch.tensor[0,0,0,0,0]}
         for key, val in amount_bboxes.items():
             amount_bboxes[key] = torch.zeros(val)
 
@@ -143,7 +184,7 @@ def mean_average_precision(
                 else:
                     FP[detection_idx] = 1
 
-            # if IOU is lower then the detection is a false positive
+            # if IOU is lower than the detection is a false positive
             else:
                 FP[detection_idx] = 1
 
@@ -173,8 +214,9 @@ def plot_image(image, boxes):
     # box[1] is y midpoint, box[3] is height
 
     # Create a Rectangle potch
-    for box in boxes:
-        box = box[2:]
+    for box1 in boxes:
+        box = box1[2:]
+        label = box1[0]
         assert len(box) == 4, "Got more values than in x, y, w, h, in a box!"
         upper_left_x = box[0] - box[2] / 2
         upper_left_y = box[1] - box[3] / 2
@@ -185,7 +227,9 @@ def plot_image(image, boxes):
             linewidth=1,
             edgecolor="r",
             facecolor="none",
+            label = label
         )
+        plt.gca().text(upper_left_x * width, upper_left_y * height, label, color='r', fontsize=12)
         # Add the patch to the Axes
         ax.add_patch(rect)
 
@@ -258,11 +302,11 @@ def convert_cellboxes(predictions, S=7):
 
     predictions = predictions.to("cpu")
     batch_size = predictions.shape[0]
-    predictions = predictions.reshape(batch_size, 7, 7, 30)
-    bboxes1 = predictions[..., 21:25]
-    bboxes2 = predictions[..., 26:30]
+    predictions = predictions.reshape(batch_size, 7, 7, 20)
+    bboxes1 = predictions[..., 11:15]
+    bboxes2 = predictions[..., 16:20]
     scores = torch.cat(
-        (predictions[..., 20].unsqueeze(0), predictions[..., 25].unsqueeze(0)), dim=0
+        (predictions[..., 10].unsqueeze(0), predictions[..., 15].unsqueeze(0)), dim=0
     )
     best_box = scores.argmax(0).unsqueeze(-1)
     best_boxes = bboxes1 * (1 - best_box) + best_box * bboxes2
@@ -271,8 +315,8 @@ def convert_cellboxes(predictions, S=7):
     y = 1 / S * (best_boxes[..., 1:2] + cell_indices.permute(0, 2, 1, 3))
     w_y = 1 / S * best_boxes[..., 2:4]
     converted_bboxes = torch.cat((x, y, w_y), dim=-1)
-    predicted_class = predictions[..., :20].argmax(-1).unsqueeze(-1)
-    best_confidence = torch.max(predictions[..., 20], predictions[..., 25]).unsqueeze(
+    predicted_class = predictions[..., :10].argmax(-1).unsqueeze(-1)
+    best_confidence = torch.max(predictions[..., 10], predictions[..., 15]).unsqueeze(
         -1
     )
     converted_preds = torch.cat(

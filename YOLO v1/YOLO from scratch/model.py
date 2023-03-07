@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 
-
-
+# Ovo je arhitektura yolo modela svaki touple oznacava: (dimenzija kernela, broj filtera, stride, padding)
+# 'M' je max pooling
 architecture_config = [
     (7, 64, 2, 3),
     "M",
@@ -25,6 +25,8 @@ architecture_config = [
 ]
 
 
+# Definise se podklasa nn.Module gde ce se definisati svaki konvolutivni layer a za njim batchnorm i leaky relu
+
 class CNNBlock(nn.Module):
     def __init__(self, in_channels, out_channels, **kwargs):
         super(CNNBlock, self).__init__()
@@ -35,9 +37,13 @@ class CNNBlock(nn.Module):
     def forward(self, x):
         return self.leakyrelu(self.batchnorm(self.conv(x)))
 
+    # Ovde se definise ceo model gde se prolazi kroz architecture i kao rezultat se dobija arhitektura yolo modela
+    # razlika je sto je sada potreban prvi in_channel sa jednim kanalom (jer je grayscale slika)
+    # i to sto na kraju mora krajnji tensor da bude drugih dimenzija jer ima 10 klasa a ne 20 kao u originalnom modelu
+
 
 class Yolov1(nn.Module):
-    def __init__(self, in_channels=3, **kwargs):
+    def __init__(self, in_channels=1, **kwargs):
         super(Yolov1, self).__init__()
         self.architecture = architecture_config
         self.in_channels = in_channels
@@ -94,16 +100,18 @@ class Yolov1(nn.Module):
 
     def _create_fcs(self, split_size, num_boxes, num_classes):
         S, B, C = split_size, num_boxes, num_classes
-
-        # In original paper this should be
-        # nn.Linear(1024*S*S, 4096),
-        # nn.LeakyReLU(0.1),
-        # nn.Linear(4096, S*S*(B*5+C))
-
         return nn.Sequential(
             nn.Flatten(),
             nn.Linear(1024 * S * S, 496),
             nn.Dropout(0.0),
             nn.LeakyReLU(0.1),
-            nn.Linear(496, S * S * (C + B * 5)),
+            nn.Linear(496, S * S * (C + B * 5))
+            # posle ovoga mora da se izmeni output tako da bude (S, S, 20)
         )
+
+
+def test(S=7, B=2, C=10):
+    model = Yolov1(split_size=S, num_boxes=B, num_classes=C)
+    x = torch.rand((2, 1, 448, 448))
+    print(model(x).shape)
+    # Rezultat ovoga je tensor dimenzije 1 duzine S * S * (5 * B + C)
